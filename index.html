@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>木生火时光餐厅点餐系统</title>
+    <style>
+        :root { --primary-color: #d32f2f; --sidebar-bg: #f8f9fa; --border-color: #eee; }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: "PingFang SC", "Helvetica Neue", sans-serif; }
+        body { display: flex; flex-direction: column; height: 100vh; color: #333; }
+
+        /* 顶部餐厅名称 [cite: 3, 4, 5] */
+        header { 
+            height: 70px; background: #222; color: white; text-align: center; 
+            display: flex; flex-direction: column; justify-content: center; flex-shrink: 0;
+        }
+        header h1 { font-size: 1.3rem; letter-spacing: 2px; }
+        header p { font-size: 0.75rem; color: #aaa; margin-top: 2px; }
+
+        /* 主体布局：左20% 右80% */
+        main { display: flex; flex: 1; overflow: hidden; }
+
+        .sidebar { 
+            width: 20%; background: var(--sidebar-bg); border-right: 1px solid var(--border-color);
+            overflow-y: auto; overflow-x: hidden;
+        }
+        .category-item { 
+            padding: 18px 10px; font-size: 0.9rem; text-align: center; color: #666;
+            cursor: pointer; border-bottom: 1px solid #e9ecef; transition: 0.2s;
+        }
+        .category-item.active { background: white; color: var(--primary-color); font-weight: bold; border-left: 4px solid var(--primary-color); }
+
+        .dish-list { width: 80%; overflow-y: auto; padding: 15px; background: #fff; }
+        .dish-item { 
+            display: flex; justify-content: space-between; align-items: center; 
+            padding: 15px 0; border-bottom: 1px solid var(--border-color);
+        }
+        .dish-info h3 { font-size: 1rem; margin-bottom: 4px; color: #222; }
+        .dish-info span { font-size: 0.85rem; color: #888; display: block; }
+        .price-tag { color: var(--primary-color); font-weight: bold; font-size: 1.1rem; }
+        .add-btn { 
+            background: var(--primary-color); color: white; border: none; 
+            width: 28px; height: 28px; border-radius: 50%; font-size: 1.2rem; cursor: pointer;
+        }
+
+        /* 底部结算栏 */
+        footer { 
+            height: 60px; background: #333; color: white; 
+            display: flex; justify-content: space-between; align-items: center; 
+            padding: 0 20px; z-index: 1000;
+        }
+        .cart-info { display: flex; align-items: center; gap: 15px; }
+        .total-price { font-size: 1.3rem; font-weight: bold; color: #ffd54f; }
+        .view-cart-btn { background: #555; padding: 6px 12px; border-radius: 4px; font-size: 0.85rem; cursor: pointer; }
+
+        /* 购物车详情弹窗 */
+        #cart-modal { 
+            display: none; position: fixed; bottom: 60px; left: 0; width: 100%; 
+            background: white; border-top-left-radius: 12px; border-top-right-radius: 12px;
+            box-shadow: 0 -5px 15px rgba(0,0,0,0.2); max-height: 60%; overflow-y: auto;
+        }
+        .cart-header { padding: 15px; background: #f4f4f4; display: flex; justify-content: space-between; border-radius: 12px 12px 0 0; }
+        .cart-row { display: flex; justify-content: space-between; padding: 12px 20px; border-bottom: 1px solid #eee; }
+        .del-item { color: #ff5252; cursor: pointer; font-size: 0.9rem; }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>木生火 时光 [cite: 3]</h1>
+    <p>空中花园餐吧 Sky Garden MealBar [cite: 4, 5]</p>
+</header>
+
+<main>
+    <div class="sidebar" id="categories"></div>
+    <div class="dish-list" id="dishes"></div>
+</main>
+
+<div id="cart-modal">
+    <div class="cart-header"><strong>已选菜品清单</strong><span onclick="toggleCart()" style="cursor:pointer">关闭</span></div>
+    <div id="cart-content"></div>
+</div>
+
+<footer>
+    <div class="cart-info">
+        <div class="total-price">合计: ¥<span id="total-val">0</span></div>
+        <div class="view-cart-btn" onclick="toggleCart()">点开查看详情</div>
+    </div>
+    <div style="font-size: 0.9rem; opacity: 0.8;">共 <span id="cart-count">0</span> 件菜品</div>
+</footer>
+
+<script>
+    // 菜品数据完全匹配文档内容 [cite: 7-178]
+    const menuData = {
+        "招牌推荐": [
+            { name: "海鲜大咖 (中份)", price: 198, note: "香辣/蒜香" },
+            { name: "海鲜大咖 (大份)", price: 298, note: "香辣/蒜香" },
+            { name: "避风塘波士顿龙虾", price: 0, note: "时价" },
+            { name: "波士顿龙虾烩豆腐", price: 0, note: "时价/需预定" },
+            { name: "广式掌亦煲", price: 88, note: "/份" },
+            { name: "走地鸡冬瓜盅", price: 168, note: "/份" },
+            { name: "招牌罗氏虾", price: 88, note: "山色藜麦奶油/避风塘/豉油皇" },
+            { name: "木生火烤鱼", price: 88, note: "香辣/蒜香" },
+            { name: "一品鲜椒美蛙", price: 78, note: "金汤/香辣/紫苏" },
+            { name: "果木烧鸡", price: 98, note: "/份" },
+            { name: "脆皮乳鸽", price: 38, note: "/只" }
+        ],
+        "粤菜精选": [
+            { name: "红焖羊肉 (2斤起)", price: 88, note: "按斤计费" },
+            { name: "清汤羊 (2斤起)", price: 88, note: "按斤计费" },
+            { name: "风生水起捞鸡", price: 138, note: "/份" },
+            { name: "鲍鱼焖鸡", price: 188, note: "/份" },
+            { name: "潮汕卤鹅", price: 78, note: "/份" },
+            { name: "广式牛杂煲", price: 88, note: "/份" },
+            { name: "避风塘皮皮虾", price: 128, note: "/份" },
+            { name: "椒盐皮皮虾", price: 128, note: "/份" },
+            { name: "白灼手钓青鱿", price: 88, note: "/份" },
+            { name: "粤式过桥鲈鱼片", price: 58, note: "/份" },
+            { name: "新派菠萝咕噜肉", price: 42, note: "/份" },
+            { name: "香煎黄花鱼", price: 48, note: "/条" },
+            { name: "甲鱼焖鸡", price: 0, note: "时价/需预定" },
+            { name: "椒香安格斯牛仔骨", price: 68, note: "/份" },
+            { name: "半岛脆叉皇", price: 58, note: "/份" },
+            { name: "粤式沙姜猪手", price: 68, note: "/份" },
+            { name: "金沙蒜香排骨", price: 69, note: "/份" },
+            { name: "荔枝木吊烧排骨", price: 68, note: "/份" },
+            { name: "豉油皇鹅肠", price: 58, note: "/份" },
+            { name: "清爽虾仁炒芦笋", price: 56, note: "/份" },
+            { name: "炭烤猪颈肉", price: 38, note: "/份" },
+            { name: "白灼墨鱼仔", price: 39, note: "/份" },
+            { name: "白灼罗氏虾", price: 88, note: "/份" },
+            { name: "白灼大明虾", price: 68, note: "/份" },
+            { name: "白灼八爪鱼", price: 39, note: "/份" },
+            { name: "咸蛋黄土豆", price: 28, note: "/份" },
+            { name: "避风塘甜玉米", price: 36, note: "/份" },
+            { name: "椒盐多春鱼", price: 42, note: "/份" },
+            { name: "椒盐鱿鱼须", price: 49, note: "/份" },
+            { name: "蟹黄八宝豆腐", price: 39, note: "/份" },
+            { name: "xo酱荷兰豆炒鲜鱿", price: 48, note: "/份" },
+            { name: "香煎手工墨鱼饼", price: 38, note: "/份" }
+        ],
+        "新派川菜": [
+            { name: "经典老坛酸菜鱼", price: 78, note: "/份" },
+            { name: "招牌香辣虾", price: 69, note: "/份" },
+            { name: "御品海鲜毛血旺", price: 88, note: "/份" },
+            { name: "野山椒炒雪花吊龙", price: 78, note: "/份" },
+            { name: "香辣虾蛙双拼锅", price: 88, note: "/份" },
+            { name: "酸汤雪花肥牛", price: 68, note: "/份" },
+            { name: "火爆腰花", price: 58, note: "/份" },
+            { name: "水煮雪花吊龙", price: 78, note: "/份" },
+            { name: "酸菜炒肥肠", price: 58, note: "/份" },
+            { name: "农家小炒肉", price: 42, note: "/份" }
+        ],
+        "创意无国界": [
+            { name: "德国咸猪手", price: 118, note: "/份" },
+            { name: "冬阴功海鲜汤", price: 99, note: "/份" },
+            { name: "酸汤海鲜烩鲈鱼", price: 118, note: "/份" },
+            { name: "咖喱罗氏虾", price: 88, note: "/份" },
+            { name: "网红面包咖喱鸡", price: 68, note: "/份" },
+            { name: "照烧汁鱿鱼", price: 42, note: "/份" },
+            { name: "七味盐脆皮豆腐", price: 32, note: "/份" }
+        ],
+        "蒸菜/炖汤": [
+            { name: "特色蒸糟醉黄鱼", price: 42, note: "/份" },
+            { name: "金银蒜粉丝蒸虾", price: 62, note: "/份" },
+            { name: "粉丝蒸带子(4个)", price: 48, note: "/份" },
+            { name: "清蒸鲈鱼", price: 69, note: "/份" },
+            { name: "肉末蒸山水豆腐", price: 28, note: "/份" },
+            { name: "粉丝娃娃菜", price: 28, note: "/份" },
+            { name: "虫草花土鸡汤(盅)", price: 28, note: "" },
+            { name: "虫草花土鸡汤(煲)", price: 98, note: "" },
+            { name: "牛鞭汤(盅)", price: 38, note: "" },
+            { name: "牛鞭汤(煲)", price: 128, note: "" }
+        ],
+        "蔬菜/凉菜": [
+            { name: "豆豉鲮鱼油麦菜", price: 32, note: "/份" },
+            { name: "干锅手撕包菜", price: 32, note: "/份" },
+            { name: "酸辣土豆丝", price: 32, note: "/份" },
+            { name: "生炒芥兰(虾酱)", price: 32, note: "/份" },
+            { name: "蒜香番薯叶", price: 32, note: "/份" },
+            { name: "椒丝腐乳通菜", price: 32, note: "/份" },
+            { name: "卤水拼盘", price: 62, note: "/份" },
+            { name: "泰汁凤尾罗氏虾", price: 78, note: "/份" },
+            { name: "卤水掌亦", price: 72, note: "/份" },
+            { name: "无骨凤爪", price: 36, note: "/份" },
+            { name: "川香牛肉丝", price: 29, note: "/份" },
+            { name: "鸡丝凉面", price: 18, note: "/份" },
+            { name: "香辣蚕豆", price: 18, note: "/份" },
+            { name: "麻辣牛肉", price: 38, note: "/份" },
+            { name: "冰镇水果青瓜", price: 18, note: "/份" },
+            { name: "冰镇秋葵", price: 28, note: "/份" },
+            { name: "凉拌黄瓜", price: 16, note: "/份" },
+            { name: "烧椒皮蛋", price: 22, note: "/份" },
+            { name: "下酒花生米", price: 16, note: "/份" }
+        ],
+        "主食点心": [
+            { name: "瑶柱菜心炒饭", price: 36, note: "/份" },
+            { name: "菠萝炒饭", price: 46, note: "/份" },
+            { name: "三丝炒面", price: 26, note: "/份" },
+            { name: "三丝炒粉", price: 26, note: "/份" },
+            { name: "爆浆糍粑", price: 22, note: "/6个" },
+            { name: "炸泰国虾片", price: 22, note: "/份" },
+            { name: "香酥脆皮奶", price: 22, note: "/6个" },
+            { name: "我张小酥肉", price: 23, note: "/份" }
+        ],
+        "海鲜烧烤": [
+            { name: "鸡春子烤生蚝", price: 12, note: "4个起" },
+            { name: "蒜蓉烤生蚝", price: 10, note: "4个起" },
+            { name: "粉丝烤生蚝", price: 12, note: "4个起" },
+            { name: "盐焗原味罗氏虾", price: 88, note: "/份" },
+            { name: "蒜蓉烤带子", price: 42, note: "4个" },
+            { name: "粉丝烤带子", price: 45, note: "4个" },
+            { name: "蒜蓉烤新西兰青口", price: 24, note: "6个" },
+            { name: "粉丝烤扇贝", price: 35, note: "6个" },
+            { name: "蒜蓉烤扇贝", price: 32, note: "6个" },
+            { name: "炭烤小海鱼", price: 36, note: "/份" },
+            { name: "大串鱿鱼须", price: 35, note: "5串" },
+            { name: "烤干鱿", price: 25, note: "/份" },
+            { name: "烤牛蛙", price: 16, note: "/只" },
+            { name: "现烤煎大鱿鱼", price: 32, note: "/条" },
+            { name: "现烤秋刀鱼", price: 18, note: "/条" },
+            { name: "现烤多春鱼", price: 22, note: "/份" }
+        ],
+        "肉类烧烤": [
+            { name: "烤脆骨", price: 26, note: "5串" },
+            { name: "烤牛肉串", price: 26, note: "5串" },
+            { name: "烤鸡爪", price: 25, note: "5串" },
+            { name: "烤鸡中翅", price: 12, note: "串" },
+            { name: "烤羊肉串", price: 26, note: "5串" },
+            { name: "烤鸡腿", price: 12, note: "只" },
+            { name: "烤五花肉", price: 24, note: "5串" },
+            { name: "烤牛板筋", price: 26, note: "5串" },
+            { name: "烤台湾热狗", price: 6, note: "串" },
+            { name: "烤全羊(需预定)", price: 1988, note: "/只" },
+            { name: "古法烤羊排", price: 88, note: "/斤" },
+            { name: "烤牛心油", price: 26, note: "5串" },
+            { name: "烤大油边", price: 24, note: "3串" },
+            { name: "红柳木羊肉", price: 10, note: "3串起" }
+        ],
+        "创意烧烤/锡纸": [
+            { name: "澳洲雪花牛肋条", price: 12, note: "串" },
+            { name: "鲍鱼澳洲雪花牛肋条", price: 18, note: "串" },
+            { name: "青椒澳洲雪花牛肋条", price: 12, note: "串" },
+            { name: "虾滑青椒", price: 9, note: "串" },
+            { name: "京葱澳洲雪花牛肋条", price: 12, note: "串" },
+            { name: "菠萝澳洲牛肋条", price: 12, note: "串" },
+            { name: "香茶肥牛卷", price: 12, note: "串" },
+            { name: "烤鳗鱼", price: 15, note: "串" },
+            { name: "青椒猪颈肉", price: 6, note: "串" },
+            { name: "金针菇肥牛卷", price: 12, note: "串" },
+            { name: "肥牛秋葵卷", price: 9, note: "串" },
+            { name: "明太子西葫芦", price: 8, note: "串" },
+            { name: "虾滑香菇", price: 9, note: "串" },
+            { name: "焦糖菠萝", price: 18, note: "/份" },
+            { name: "锡纸猪脑花", price: 38, note: "(推荐)" },
+            { name: "芝士榴莲", price: 28, note: "/份" },
+            { name: "锡纸金针菇", price: 22, note: "/份" },
+            { name: "锡纸黑毛肚", price: 38, note: "/份" },
+            { name: "锡纸娃娃菜", price: 18, note: "/份" },
+            { name: "芝士番薯", price: 19, note: "/份" }
+        ],
+        "砂锅粥/青菜": [
+            { name: "砂锅咸骨粥", price: 38, note: "/份" },
+            { name: "砂锅大虾粥", price: 48, note: "/份" },
+            { name: "砂锅牛蛙粥", price: 38, note: "/份" },
+            { name: "烤肉沫茄子", price: 12, note: "(推荐)" },
+            { name: "烤韭菜", price: 16, note: "5串" },
+            { name: "烤秋葵", price: 18, note: "/份" },
+            { name: "烤金针菇", price: 18, note: "5串" },
+            { name: "烤馒头", price: 6, note: "串" },
+            { name: "黄油烤面包", price: 15, note: "(推荐)" },
+            { name: "烤豆腐干", price: 15, note: "3串" },
+            { name: "蒜蓉烤青椒", price: 12, note: "/份" },
+            { name: "烤玉米", price: 12, note: "/条" }
+        ]
+    };
+
+    let cart = [];
+    const catContainer = document.getElementById('categories');
+    const dishContainer = document.getElementById('dishes');
+    const cartContent = document.getElementById('cart-content');
+
+    // 初始化分类导航
+    function init() {
+        Object.keys(menuData).forEach((cat, index) => {
+            const div = document.createElement('div');
+            div.className = `category-item ${index === 0 ? 'active' : ''}`;
+            div.innerText = cat;
+            div.onclick = () => switchCategory(cat, div);
+            catContainer.appendChild(div);
+        });
+        renderDishes(Object.keys(menuData)[0]);
+    }
+
+    function switchCategory(cat, el) {
+        document.querySelectorAll('.category-item').forEach(i => i.classList.remove('active'));
+        el.classList.add('active');
+        renderDishes(cat);
+    }
+
+    function renderDishes(cat) {
+        dishContainer.innerHTML = '';
+        menuData[cat].forEach(dish => {
+            const item = document.createElement('div');
+            item.className = 'dish-item';
+            const priceText = dish.price === 0 ? "时价" : `¥${dish.price}`;
+            item.innerHTML = `
+                <div class="dish-info">
+                    <h3>${dish.name}</h3>
+                    <span>${dish.note}</span>
+                    <div class="price-tag">${priceText}</div>
+                </div>
+                <button class="add-btn" onclick="addToCart('${dish.name}', ${dish.price})">+</button>
+            `;
+            dishContainer.appendChild(item);
+        });
+    }
+
+    function addToCart(name, price) {
+        cart.push({ id: Date.now(), name, price });
+        updateUI();
+    }
+
+    function removeFromCart(id) {
+        cart = cart.filter(item => item.id !== id);
+        updateUI();
+    }
+
+    function updateUI() {
+        const total = cart.reduce((sum, item) => sum + item.price, 0);
+        document.getElementById('total-val').innerText = total;
+        document.getElementById('cart-count').innerText = cart.length;
+
+        cartContent.innerHTML = cart.map(item => `
+            <div class="cart-row">
+                <span>${item.name}</span>
+                <div>
+                    <span style="margin-right:15px">¥${item.price}</span>
+                    <span class="del-item" onclick="removeFromCart(${item.id})">删除</span>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    function toggleCart() {
+        const modal = document.getElementById('cart-modal');
+        modal.style.display = modal.style.display === 'block' ? 'none' : 'block';
+    }
+
+    init();
+</script>
+</body>
+</html>
